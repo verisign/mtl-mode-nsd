@@ -1,0 +1,9 @@
+# #-- ixfr_and_restart.post --#
+[ -f ../.tpkg.var.master ] && source ../.tpkg.var.master
+# Use .tpkg.var.test for in test variable passing
+[ -f .tpkg.var.test ] && source .tpkg.var.test
+. ../common.sh
+
+kill_pid ${TESTNS_PID}
+kill_from_pidfile nsd.pid
+

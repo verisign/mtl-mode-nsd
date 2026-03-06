@@ -1,0 +1,23 @@
+# #-- allow_query.pre--#
+# source the master var file when it's there
+[ -f ../.tpkg.var.master ] && source ../.tpkg.var.master
+# use .tpkg.var.test for in test variable passing
+[ -f .tpkg.var.test ] && source .tpkg.var.test
+. ../common.sh
+
+if [ -z "${TPKG_PORT}" ]; then
+	# start NSD
+	get_random_port 1
+	TPKG_PORT=$RND_PORT
+
+	TPKG_NSD_PID="nsd.pid.$$"
+	# share the vars
+	echo "export TPKG_PORT=$TPKG_PORT" >> .tpkg.var.test
+	echo "export TPKG_NSD_PID=$TPKG_NSD_PID" >> .tpkg.var.test
+fi
+
+PRE="../.."
+TPKG_NSD="$PRE/nsd"
+$TPKG_NSD -c allow_query.conf -p $TPKG_PORT -P $TPKG_NSD_PID -L 5 -F 0xFFFF \
+|| $TPKG_NSD -c allow_query.conf -p $TPKG_PORT -P $TPKG_NSD_PID
+wait_nsd_up nsd.log

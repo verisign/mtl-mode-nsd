@@ -1,0 +1,34 @@
+# #-- dns-cookies.pre--#
+# source the master var file when it's there
+[ -f ../.tpkg.var.master ] && source ../.tpkg.var.master
+# use .tpkg.var.test for in test variable passing
+[ -f .tpkg.var.test ] && source .tpkg.var.test
+. ../common.sh
+if test ! -x "`which unshare 2>&1`"; then
+	echo "no unshare (from util-linux package) available, skip test"
+	exit 0
+fi
+if test ! -x "`which faketime 2>&1`"; then
+	echo "no faketime available, skip test"
+	exit 0
+fi
+
+
+echo "Starting test A1"
+unshare -rUn bash dns-cookies.test.A1 || exit 1
+
+echo "Starting test A2"
+unshare -rUn bash dns-cookies.test.A2 || exit 1
+
+echo "Starting test A3"
+unshare -rUn bash dns-cookies.test.A3 || exit 1
+
+echo "Starting test A4"
+unshare -rUn bash dns-cookies.test.A4 || exit 1
+
+echo "Starting test C1"
+unshare -rUn bash dns-cookies.test.C1 || exit 1
+
+echo "Starting test C2"
+unshare -mrUn bash dns-cookies.test.C2 || exit 1
+

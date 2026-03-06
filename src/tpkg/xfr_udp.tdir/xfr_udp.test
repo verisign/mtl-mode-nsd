@@ -1,0 +1,39 @@
+# #-- xfr_udp.test --#
+# source the master var file when it's there
+[ -f ../.tpkg.var.master ] && source ../.tpkg.var.master
+# use .tpkg.var.test for in test variable passing
+[ -f .tpkg.var.test ] && source .tpkg.var.test
+. ../common.sh
+
+# start NSD
+get_random_port 1
+TPKG_PORT=$RND_PORT
+
+PRE="../.."
+TPKG_NSD_PID="nsd.pid.$$"
+TPKG_NSD="$PRE/nsd"
+# share the vars
+echo "export TPKG_PORT=$TPKG_PORT" >> .tpkg.var.test
+echo "export TPKG_NSD_PID=$TPKG_NSD_PID" >> .tpkg.var.test
+
+exit_code=0
+
+$TPKG_NSD -c nsd_udp.conf -u "" -p $TPKG_PORT -P $TPKG_NSD_PID
+
+wait_nsd_up nsd.log
+wait_logfile nsd.log "serial 1 is updated to 2" 45
+
+echo port: $TPKG_PORT
+dig @127.0.0.1 -p $TPKG_PORT a www.example.net > xfr_udp.query
+if [ ${?} -eq 0 ] && grep '^www\.example\.net\.' xfr_udp.query >/dev/null 2>&1; then
+  echo "Query result is correct. www.example.net exists"
+else
+  echo "Query result is incorrect. www.example.net does not exist"
+  echo "dig:"
+  cat xfr_udp.query
+  exit_code=1
+fi
+
+cat nsd.log
+
+exit ${exit_code}

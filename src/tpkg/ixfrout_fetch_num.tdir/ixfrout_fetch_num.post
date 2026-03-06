@@ -1,0 +1,15 @@
+# #-- ixfrout_fetch_num.post --#
+# source the master var file when it's there
+[ -f ../.tpkg.var.master ] && source ../.tpkg.var.master
+# source the test var file when it's there
+[ -f .tpkg.var.test ] && source .tpkg.var.test
+
+. ../common.sh
+
+if test -f testns.log; then
+	cat testns.log
+fi
+kill_from_pidfile testns.pid
+
+# do your teardown here
+kill_from_pidfile nsd.pid

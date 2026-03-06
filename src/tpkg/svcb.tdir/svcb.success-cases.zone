@@ -1,0 +1,48 @@
+$ORIGIN success-cases.
+$TTL 3600
+
+@       SOA     primary admin 0 0 0 0 0
+
+
+; A particular key does not need to have a value
+
+s01	SVCB   0 . key123
+
+
+; echconfig does not need to have a value
+
+s02	SVCB   0 . echconfig
+
+
+; When "no-default-alpn" is specified in an RR, "alpn" must also be specified
+; in order for the RR to be "self-consistent"
+
+s03	HTTPS	0 . alpn="h2,h3" no-default-alpn
+
+
+; SHOULD is not MUST (so allowed)
+; Zone-file implementations SHOULD enforce self-consistency
+;
+; disabled, simdzone enforces self-consistency (unless secondary)
+;s04	HTTPS	0 . no-default-alpn
+
+
+; SHOULD is not MUST (so allowed)
+; (port and no-default-alpn are automatically mandatory keys with HTTPS)
+; Other automatically mandatory keys SHOULD NOT appear in the list either.
+;
+; disabled, simdzone enforces self-consistency (unless secondary)
+;s05	HTTPS	0 . alpn="dot" no-default-alpn port=853 mandatory=port
+
+; Any valid base64 is okay for ech
+s06     HTTPS   0 . ech="aGVsbG93b3JsZCE="
+
+; echconfig is an alias for ech
+;
+; disabled, echconfig is not registered with IANA
+;s07     HTTPS   0 . echconfig="aGVsbG93b3JsZCE="
+
+; dohpath can be (non-)quoted
+
+s08     HTTPS   0 . alpn=h2 dohpath="/dns-query{?dns}"
+s09     HTTPS   0 . alpn=h2 dohpath=/dns-query{é?dns}
