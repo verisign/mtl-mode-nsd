@@ -36,6 +36,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "config.h"
+#include "namedb.h"
+
 typedef enum DNSSEC_ALGO_TYPE
 {
     ALGO_NONE,
@@ -62,6 +65,11 @@ typedef struct PQC_DNSSEC_ALGOS
 } PQC_DNSSEC_ALGOS;
 
 #define MTL_INDEX_LEN 8
+
+#define MTL_OK 0
+#define MTL_NULL_PARAMETERS 1
+#define MTL_INVALID_RECORD 2
+#define MTL_BUFFER_ERROR 3
 
 
 /**
@@ -101,5 +109,12 @@ size_t val_algo_get_hash_size(uint8_t algo);
  */
 size_t val_algo_get_condensed_sig_header_size(uint8_t algo);
 
+/**
+ * Get the PQC Algorithm condensed signature size
+ * @param rr rr_type resource record
+ * @param sig_length pointer to size_t that is the length of the condensed signature
+ * @return 0 on success, value for error
+ */
+uint8_t val_algo_get_condensed_size(rr_type* rr, size_t* sig_length);
 
 #endif // __VAL_PQC_ALGO__
