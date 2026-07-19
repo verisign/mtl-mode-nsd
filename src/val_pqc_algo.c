@@ -174,12 +174,6 @@ size_t val_algo_get_condensed_sig_header_size(uint8_t algo)
  */
 uint8_t val_algo_get_condensed_size(rr_type* rr, size_t* sig_length)
 {
-    uint16_t hash_size = 0;
-    size_t   header_len = 0;
-    size_t   buffer_size = 0;
-    uint16_t sibling_count = 0;
-    size_t   condensed_sig_size = 0;
-
     // Verify the parameters are not NULL
     if((rr == NULL)||(sig_length == NULL)) {
         return MTL_NULL_PARAMETERS;
@@ -188,6 +182,13 @@ uint8_t val_algo_get_condensed_size(rr_type* rr, size_t* sig_length)
     *sig_length = 0;
 
     #ifdef MTL_MODE_FULL_CODE
+        uint16_t hash_size = 0;
+        size_t   header_len = 0;
+        size_t   buffer_size = 0;
+        uint16_t sibling_count = 0;
+        size_t   condensed_sig_size = 0;
+
+
         // Validate that the rr is the right type and has the right data fields
         if((rr->type != TYPE_RRSIG) ||
         (rr->rdata_count < 8) ||
