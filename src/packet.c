@@ -100,11 +100,16 @@ packet_encode_rr(query_type *q, domain_type *owner, rr_type *rr, uint32_t ttl)
 
 			q->reply_full++;
 
+			if(val_algo_get_condensed_size(rr, &condensed_sig_size) != 0) {
+				RCODE_SET(q->packet, RCODE_SERVFAIL);
+				return 2;
+			}
+
 			buffer_write_u8(q->packet, 1); /* Full signature */
 			/* First the condensed signature */
 			buffer_write(q->packet,
 				rdata_atom_data(rr->rdatas[j])+1,
-				rdata_atom_size(rr->rdatas[j])-1);
+				condensed_sig_size-1);
 
 			for(k = 0; k < apex_rrsigs->rr_count; k++) {
 				rr_type* rrsig = &apex_rrsigs->rrs[k];
@@ -113,28 +118,15 @@ packet_encode_rr(query_type *q, domain_type *owner, rr_type *rr, uint32_t ttl)
 				if(rrsig->rdata_count < 9
 				|| rr_rrsig_type_covered(rrsig) != TYPE_SOA
 				|| !rr_rrsig_algorithm_mtl(rr)
-				|| rr_rrsig_keytag(rrsig)!=rr_rrsig_keytag(rr))
+				|| rr_rrsig_keytag(rrsig)!=rr_rrsig_keytag(rr)
+			    || rr_rrsig_algorithm(rrsig)!=rr_rrsig_algorithm(rr))
 					continue;
-				// Get the offset plus 1 for the DNSSEC type. Offset doesn't include
-				//    sibiling count or hash data
-				offset = val_algo_get_condensed_sig_header_size(rr_rrsig_algorithm(rr)) + 1;
-				hash_size = val_algo_get_hash_size(rr_rrsig_algorithm(rr));
+			
+				if(val_algo_get_condensed_size(rrsig, &condensed_sig_size) != 0) {
+					RCODE_SET(q->packet, RCODE_SERVFAIL);
+					return 2;
+				}
 
-				// If there is no sibiling count, continue
-				if(rdata_atom_size(rrsig->rdatas[8]) < offset + 2)
-					continue;
-				sibling_count = ntohs(*(uint16_t *)(
-				   rdata_atom_data(rrsig->rdatas[8]) + offset));
-
-	 		    /* Each sibling is 16 bytes, skipping them
-				 * skips the complete Authentication Path
-				 * and takes us to the remainder that needs
-				 * to be appended to the RRSIG signature data.
-				 */
-				condensed_sig_size = offset + 2 + (hash_size * sibling_count);
-
-				if(rdata_atom_size(rrsig->rdatas[8]) < condensed_sig_size)
-					continue;
 				buffer_write(q->packet,
 					rdata_atom_data(rrsig->rdatas[8]) + condensed_sig_size,
 					rdata_atom_size(rrsig->rdatas[8]) - condensed_sig_size);
@@ -151,26 +143,17 @@ packet_encode_rr(query_type *q, domain_type *owner, rr_type *rr, uint32_t ttl)
 		    || rr_rrsig_type_covered(rr) == TYPE_DNSKEY)	
 		&& rr_rrsig_algorithm_mtl(rr)) 	
 		{
-			// This is a SOA or DNSKEY record so make it condensed in the response.
-			uint16_t sibling_count;
-			condensed_sig_size = val_algo_get_condensed_sig_header_size(rr_rrsig_algorithm(rr));			
-			hash_size = val_algo_get_hash_size(rr_rrsig_algorithm(rr));			
-
-			// Get the condensed signature length...
-			sibling_count = ntohs(*(uint16_t *)(
-				   rdata_atom_data(rr->rdatas[8]) + condensed_sig_size + 1));  // Add one to account for the full/condensed byte
-			
-			// Add the offset for the sibiling node count
-			condensed_sig_size += 2; 
-			// Add the block of proof hashes
-			condensed_sig_size += hash_size * sibling_count;  
+			if(val_algo_get_condensed_size(rr, &condensed_sig_size) != 0) {
+				RCODE_SET(q->packet, RCODE_SERVFAIL);
+				return 2;
+			}
 
 			// First the condensed signature byte
 			buffer_write_u8(q->packet, 0);
 			// Then the authentication path
 			buffer_write(q->packet,
 				rdata_atom_data(rr->rdatas[j])+1,
-				condensed_sig_size);
+				condensed_sig_size - 1);
 		} else {
 			if(rr->type == TYPE_RRSIG
 			&& j == 8 /* The signature data */

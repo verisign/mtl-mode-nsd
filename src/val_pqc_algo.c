@@ -31,6 +31,7 @@
 	POSSIBILITY OF SUCH DAMAGE.
 */
 #include "val_pqc_algo.h"
+#include "namedb.h"
 #include <string.h>
 
 PQC_DNSSEC_ALGOS sig_algos[] = {
@@ -163,4 +164,64 @@ size_t val_algo_get_condensed_sig_header_size(uint8_t algo)
         return condensed_len;
     }
     return 0;
+}
+
+/**
+ * Get the PQC Algorithm condensed signature size
+ * @param rr rr_type resource record
+ * @param sig_length pointer to size_t that is the length of the condensed signature
+ * @return 0 on success, value for error
+ */
+uint8_t val_algo_get_condensed_size(rr_type* rr, size_t* sig_length)
+{
+    // Verify the parameters are not NULL
+    if((rr == NULL)||(sig_length == NULL)) {
+        return MTL_NULL_PARAMETERS;
+    }
+    // Default the signature length to 0
+    *sig_length = 0;
+
+    #ifdef MTL_MODE_FULL_CODE
+        uint16_t hash_size = 0;
+        size_t   header_len = 0;
+        size_t   buffer_size = 0;
+        uint16_t sibling_count = 0;
+        size_t   condensed_sig_size = 0;
+
+
+        // Validate that the rr is the right type and has the right data fields
+        if((rr->type != TYPE_RRSIG) ||
+        (rr->rdata_count < 8) ||
+        (!rr_rrsig_algorithm_mtl(rr))) {
+            return MTL_INVALID_RECORD;
+        }
+
+        // Get the header_len plus 1 for the DNSSEC type.
+        // The offset doesn't include sibiling count or hash data
+        header_len = val_algo_get_condensed_sig_header_size(rr_rrsig_algorithm(rr)) + 1;
+        hash_size = val_algo_get_hash_size(rr_rrsig_algorithm(rr));
+        buffer_size = rdata_atom_size(rr->rdatas[8]);
+
+        // The sibiling count is the next 2 bytes (if present)
+        if(buffer_size < header_len + 2) {
+            return MTL_BUFFER_ERROR;
+        }
+
+        sibling_count = ntohs(*(uint16_t*)(rdata_atom_data(rr->rdatas[8]) + header_len));
+
+        /* Each sibling is hash_size bytes, skipping them 
+        * skips the complete Authentication Path
+        * and takes us to the remainder that needs
+        * to be appended to the RRSIG signature data.
+        */
+        condensed_sig_size = header_len + 2 + (hash_size * sibling_count);
+
+        if(buffer_size < condensed_sig_size) {
+            return MTL_BUFFER_ERROR;
+        }
+
+        *sig_length = condensed_sig_size;
+    #endif
+
+    return MTL_OK;
 }
