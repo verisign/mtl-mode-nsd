@@ -98,18 +98,18 @@ packet_encode_rr(query_type *q, domain_type *owner, rr_type *rr, uint32_t ttl)
 				q->zone->apex, q->zone, TYPE_RRSIG))) {
 			size_t k;
 
-			q->reply_full++;
+			// A condensed signature is being turned into a full signature here
 
 			if(val_algo_get_condensed_size(rr, &condensed_sig_size) != 0) {
 				RCODE_SET(q->packet, RCODE_SERVFAIL);
 				return 2;
-			}
+			}	
 
 			buffer_write_u8(q->packet, 1); /* Full signature */
 			/* First the condensed signature */
 			buffer_write(q->packet,
 				rdata_atom_data(rr->rdatas[j])+1,
-				condensed_sig_size-1);
+				condensed_sig_size-1); // Offset by 1 due to the condensed/full signature byte
 
 			for(k = 0; k < apex_rrsigs->rr_count; k++) {
 				rr_type* rrsig = &apex_rrsigs->rrs[k];
@@ -121,12 +121,11 @@ packet_encode_rr(query_type *q, domain_type *owner, rr_type *rr, uint32_t ttl)
 				|| rr_rrsig_keytag(rrsig)!=rr_rrsig_keytag(rr)
 			    || rr_rrsig_algorithm(rrsig)!=rr_rrsig_algorithm(rr))
 					continue;
-			
+
 				if(val_algo_get_condensed_size(rrsig, &condensed_sig_size) != 0) {
 					RCODE_SET(q->packet, RCODE_SERVFAIL);
 					return 2;
-				}
-
+				}	
 				buffer_write(q->packet,
 					rdata_atom_data(rrsig->rdatas[8]) + condensed_sig_size,
 					rdata_atom_size(rrsig->rdatas[8]) - condensed_sig_size);
@@ -142,18 +141,20 @@ packet_encode_rr(query_type *q, domain_type *owner, rr_type *rr, uint32_t ttl)
 		&& (rr_rrsig_type_covered(rr) == TYPE_SOA
 		    || rr_rrsig_type_covered(rr) == TYPE_DNSKEY)	
 		&& rr_rrsig_algorithm_mtl(rr)) 	
-		{
+		{	
+
+			// A full signature is being turned into a condensed signature here
+
 			if(val_algo_get_condensed_size(rr, &condensed_sig_size) != 0) {
 				RCODE_SET(q->packet, RCODE_SERVFAIL);
 				return 2;
 			}
-
 			// First the condensed signature byte
 			buffer_write_u8(q->packet, 0);
 			// Then the authentication path
 			buffer_write(q->packet,
 				rdata_atom_data(rr->rdatas[j])+1,
-				condensed_sig_size - 1);
+				condensed_sig_size - 1);  // Offset by 1 due to the condensed/full signature byte
 		} else {
 			if(rr->type == TYPE_RRSIG
 			&& j == 8 /* The signature data */
@@ -162,7 +163,7 @@ packet_encode_rr(query_type *q, domain_type *owner, rr_type *rr, uint32_t ttl)
 			    || rr_rrsig_type_covered(rr) == TYPE_DNSKEY)		
 			&& rr_rrsig_algorithm_mtl(rr)) 
 			{	
-				q->reply_full++;
+				// A full signature is being added to the buffer here for a SOA or DNSKEY.
 			} 
 #endif
 		switch (rdata_atom_wireformat_type(rr->type, j)) {
