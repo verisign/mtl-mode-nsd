@@ -31,7 +31,6 @@
 	POSSIBILITY OF SUCH DAMAGE.
 */
 #include "val_pqc_algo.h"
-#include "namedb.h"
 #include <string.h>
 
 PQC_DNSSEC_ALGOS sig_algos[] = {
@@ -183,11 +182,10 @@ uint8_t val_algo_get_condensed_size(rr_type* rr, size_t* sig_length)
 
     #ifdef MTL_MODE_FULL_CODE
         uint16_t hash_size = 0;
-        size_t   header_len = 0;
-        size_t   buffer_size = 0;
+        size_t   header_len = 0;    
+        size_t   buffer_size = 0;  
         uint16_t sibling_count = 0;
         size_t   condensed_sig_size = 0;
-
 
         // Validate that the rr is the right type and has the right data fields
         if((rr->type != TYPE_RRSIG) ||
@@ -207,9 +205,9 @@ uint8_t val_algo_get_condensed_size(rr_type* rr, size_t* sig_length)
             return MTL_BUFFER_ERROR;
         }
 
-        sibling_count = ntohs(*(uint16_t*)(rdata_atom_data(rr->rdatas[8]) + header_len));
+        sibling_count = ntohs(*(uint16_t *)(rdata_atom_data(rr->rdatas[8]) + header_len));
 
-        /* Each sibling is hash_size bytes, skipping them 
+        /* Each sibling is 16 bytes, skipping them
         * skips the complete Authentication Path
         * and takes us to the remainder that needs
         * to be appended to the RRSIG signature data.

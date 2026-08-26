@@ -111,10 +111,10 @@ encode_answer(query_type *q, const answer_type *answer)
 
 	ANCOUNT_SET(q->packet, counts[ANSWER_SECTION]);
 	NSCOUNT_SET(q->packet,
-			counts[AUTHORITY_SECTION]
-			+ counts[OPTIONAL_AUTHORITY_SECTION]);
+		    counts[AUTHORITY_SECTION]
+		    + counts[OPTIONAL_AUTHORITY_SECTION]);
 	ARCOUNT_SET(q->packet,
-			counts[ADDITIONAL_A_SECTION]
-			+ counts[ADDITIONAL_AAAA_SECTION]
-			+ counts[ADDITIONAL_OTHER_SECTION]);
+		    counts[ADDITIONAL_A_SECTION]
+		    + counts[ADDITIONAL_AAAA_SECTION]
+		    + counts[ADDITIONAL_OTHER_SECTION]);
 }
