@@ -47,6 +47,32 @@ encode_dname(query_type *q, domain_type *domain)
 	}
 }
 
+
+
+int
+check_and_add_ladder_hash(uint8_t *list, size_t *count, size_t max_capacity, const uint8_t *new_ladder_hash) {
+	if (count == NULL || list == NULL || new_ladder_hash == NULL) {
+        return -1; // Invalid parameters
+    }
+
+    for (size_t i = 0; i < *count; i++) {
+		uint8_t *current_hash = &list[i * LADDER_HASH_OUTPUT_SIZE];
+		if (memcmp(current_hash, new_ladder_hash, LADDER_HASH_OUTPUT_SIZE)==0) {
+			return 0; // Ladder already added, only need condensed
+    	}
+	}
+	if (*count >= max_capacity) {
+        return 2; // Overflow
+    }
+
+    // Insert the new ladder hash at the end of the current valid elements
+    memcpy(&list[(*count) * LADDER_HASH_OUTPUT_SIZE], new_ladder_hash, LADDER_HASH_OUTPUT_SIZE);
+    (*count)++;
+    return 1; // Add ladder to this list, and then prepare for a full signature
+}
+
+
+
 int
 packet_encode_rr(query_type *q, domain_type *owner, rr_type *rr, uint32_t ttl)
 {
@@ -89,7 +115,6 @@ packet_encode_rr(query_type *q, domain_type *owner, rr_type *rr, uint32_t ttl)
 
 		if(rr->type == TYPE_RRSIG
 		&& j == 8 /* The signature data */
-		&& q->edns.mtl_mode_full
 		&& rr_rrsig_type_covered(rr) != TYPE_SOA
 		&& rr_rrsig_type_covered(rr) != TYPE_DNSKEY			
 		&& rr_rrsig_algorithm_mtl(rr)
@@ -105,7 +130,8 @@ packet_encode_rr(query_type *q, domain_type *owner, rr_type *rr, uint32_t ttl)
 				return 2;
 			}	
 
-			buffer_write_u8(q->packet, 1); /* Full signature */
+			size_t buffer_start = buffer_position(q->packet);
+			buffer_write_u8(q->packet, 2); /* 2 for condensed signature */
 			/* First the condensed signature */
 			buffer_write(q->packet,
 				rdata_atom_data(rr->rdatas[j])+1,
@@ -126,45 +152,74 @@ packet_encode_rr(query_type *q, domain_type *owner, rr_type *rr, uint32_t ttl)
 					RCODE_SET(q->packet, RCODE_SERVFAIL);
 					return 2;
 				}	
-				buffer_write(q->packet,
-					rdata_atom_data(rrsig->rdatas[8]) + condensed_sig_size,
-					rdata_atom_size(rrsig->rdatas[8]) - condensed_sig_size);
+				uint8_t* signed_ladder = rdata_atom_data(rrsig->rdatas[8]) + condensed_sig_size;
+				size_t signed_ladder_len = rdata_atom_size(rrsig->rdatas[8]) - condensed_sig_size;
+				uint64_t leaf_index = 0;
+				if(val_algo_get_leaf_index_from_condensed(rr, &leaf_index)) {
+					RCODE_SET(q->packet, RCODE_SERVFAIL);
+					return 2;
+				}
 
+				if (!q->edns.sigtag_enabled) {
+					buffer_write(q->packet, signed_ladder, signed_ladder_len);
+					buffer_write_u8_at(q->packet, buffer_start, 1);
+				} else {
+					if(!val_algo_sigtag_match(signed_ladder, signed_ladder_len, &q->edns)) {
+						int status = check_and_add_ladder_hash(q->ladder_list, &q->ladder_count, MAX_SIG_TAGS, signed_ladder);
+						if (status == 1) { // The signed ladder has not been added yet
+							buffer_write(q->packet, signed_ladder, signed_ladder_len);
+							buffer_write_u8_at(q->packet, buffer_start, 1);
+						} else if ((status == 2) || (status == -1)) { // Tracking overflow: set RCODE_SERVFAIL for now || invalid input params
+							RCODE_SET(q->packet, RCODE_SERVFAIL);
+							return 2;
+						} // The signed ladder has already been added: deduplication
+					} 
+				}
 				break;
 			}
 			if(k == apex_rrsigs->rr_count) {
 			}		
-		} else if(rr->type == TYPE_RRSIG
-		&& j == 8 /* The signature data */
-		&& ((!q->edns.mtl_mode_full) || 
-		    (q->edns.mtl_mode_full && (q->reply_full != 0)))
-		&& (rr_rrsig_type_covered(rr) == TYPE_SOA
-		    || rr_rrsig_type_covered(rr) == TYPE_DNSKEY)	
-		&& rr_rrsig_algorithm_mtl(rr)) 	
-		{	
-
-			// A full signature is being turned into a condensed signature here
-
-			if(val_algo_get_condensed_size(rr, &condensed_sig_size) != 0) {
-				RCODE_SET(q->packet, RCODE_SERVFAIL);
-				return 2;
-			}
-			// First the condensed signature byte
-			buffer_write_u8(q->packet, 0);
-			// Then the authentication path
-			buffer_write(q->packet,
-				rdata_atom_data(rr->rdatas[j])+1,
-				condensed_sig_size - 1);  // Offset by 1 due to the condensed/full signature byte
 		} else {
 			if(rr->type == TYPE_RRSIG
 			&& j == 8 /* The signature data */
-			&& q->edns.mtl_mode_full 
 			&& (rr_rrsig_type_covered(rr) == TYPE_SOA
 			    || rr_rrsig_type_covered(rr) == TYPE_DNSKEY)		
 			&& rr_rrsig_algorithm_mtl(rr)) 
 			{	
 				// A full signature is being added to the buffer here for a SOA or DNSKEY.
-			} 
+				if(val_algo_get_condensed_size(rr, &condensed_sig_size) != 0) {
+					RCODE_SET(q->packet, RCODE_SERVFAIL);
+					return 2;
+				}
+
+				uint8_t* signed_ladder = rdata_atom_data(rr->rdatas[8]) + condensed_sig_size;
+				size_t signed_ladder_len = rdata_atom_size(rr->rdatas[8]) - condensed_sig_size;
+				uint64_t leaf_index = 0;
+				if(val_algo_get_leaf_index_from_condensed(rr, &leaf_index)) {
+					RCODE_SET(q->packet, RCODE_SERVFAIL);
+					return 2;
+				}
+
+				// If SigTag enabled and a matching SigTag: condensed 
+				if(q->edns.sigtag_enabled && val_algo_sigtag_match(signed_ladder, signed_ladder_len, &q->edns)) {
+					// First the condensed signature byte
+					buffer_write_u8(q->packet, 2);
+					// Then the authentication path
+					buffer_write(q->packet,
+						rdata_atom_data(rr->rdatas[j])+1,
+						condensed_sig_size - 1);  // Offset by 1 due to the condensed/full signature byte	
+					break; 
+				} else if (q->edns.sigtag_enabled // If SigTag enabled and ladder already written: deduplication -> condensed
+					&& check_and_add_ladder_hash(q->ladder_list, &q->ladder_count, MAX_SIG_TAGS, signed_ladder) == 0) {
+					// First the condensed signature byte
+					buffer_write_u8(q->packet, 2);
+					// Then the authentication path
+					buffer_write(q->packet,
+						rdata_atom_data(rr->rdatas[j])+1,
+						condensed_sig_size - 1);  // Offset by 1 due to the condensed/full signature byte	
+					break; 
+				}		
+			}
 #endif
 		switch (rdata_atom_wireformat_type(rr->type, j)) {
 		case RDATA_WF_COMPRESSED_DNAME:

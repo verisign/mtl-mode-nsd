@@ -17,6 +17,7 @@
 #include "nsd.h"
 #include "packet.h"
 #include "tsig.h"
+#include "val_pqc_algo.h"
 struct ixfr_data;
 
 enum query_state {
@@ -159,6 +160,8 @@ struct query {
 
 #ifdef MTL_MODE_FULL_CODE	
 	uint16_t reply_full;
+	uint8_t ladder_list[MAX_SIG_TAGS * LADDER_HASH_OUTPUT_SIZE];
+    size_t  ladder_count;
 #endif
 
 #ifdef RATELIMIT

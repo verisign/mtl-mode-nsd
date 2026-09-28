@@ -71,7 +71,10 @@ edns_init_record(edns_record_type *edns)
 	edns->dnssec_ok = 0;
 	edns->nsid = 0;
 #ifdef MTL_MODE_FULL_CODE
-	edns->mtl_mode_full = 1;
+	for(int i=0; i<MAX_SIG_TAGS; i++) {
+		edns->sigtag_list[i].ladder_hash_len = 0;
+	}
+	edns->sigtag_enabled = 0;
 #endif
 	edns->cookie_status = COOKIE_NOT_PRESENT;
 	edns->cookie_len = 0;
@@ -85,6 +88,10 @@ static int
 edns_handle_option(uint16_t optcode, uint16_t optlen, buffer_type* packet,
 	edns_record_type* edns, struct query* query, nsd_type* nsd)
 {
+#ifdef MTL_MODE_FULL_CODE
+	sigtags_list* sig_ptr = NULL;
+#endif
+
 	(void) query; /* in case edns options need the query structure */
 	/* handle opt code and read the optlen bytes from the packet */
 	switch(optcode) {
@@ -121,8 +128,38 @@ edns_handle_option(uint16_t optcode, uint16_t optlen, buffer_type* packet,
 		break;
 #ifdef MTL_MODE_FULL_CODE
 	case MTL_MODE_FULL_CODE:
+		sig_ptr = NULL;
+		if ((optlen % 32 != 0) || 
+		    (optlen > 32 * MAX_SIG_TAGS)) {
+			return 0; // FORMERR
+		}
+
 		query->reply_full = 0;
-		buffer_skip(packet, optlen);
+		for(int i=0; i<MAX_SIG_TAGS; i++) {
+			memset(&edns->sigtag_list[i], 0, sizeof(edns->sigtag_list[i]));
+		}
+		if(!edns->sigtag_enabled) {
+			edns->opt_reserved_space += OPT_HDR; 
+		}
+		edns->sigtag_enabled = 1;
+		uint16_t sig_tag_idx = 0;
+		uint16_t option_bytes = optlen;
+
+		while(option_bytes >= 32) {			
+			edns->sigtag_list[sig_tag_idx].ladder_hash_len = 32;
+			memcpy(edns->sigtag_list[sig_tag_idx].ladder_hash, buffer_current(packet), 32);
+			buffer_skip(packet, 32);	
+			option_bytes -= 32;
+			sig_tag_idx++;
+			if(sig_tag_idx >= MAX_SIG_TAGS) {
+				fprintf(stderr, "ERROR - MAX SIG NAMES PROCESSED\n");
+				fflush(stderr);
+				break;
+			}
+		}
+		// If for some reason there are extra bytes discard them at this time.
+		buffer_skip(packet, option_bytes);
+
 		break;
 #endif
 	default:

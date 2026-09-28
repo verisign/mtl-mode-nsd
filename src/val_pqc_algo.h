@@ -33,11 +33,14 @@
 #ifndef __VAL_PQC_ALGO__
 #define __VAL_PQC_ALGO__
 
+#define LADDER_HASH_OUTPUT_SIZE 32
+
 #include <stddef.h>
 #include <stdint.h>
 
 #include "config.h"
 #include "rdata.h"
+#include "edns.h"
 
 typedef enum DNSSEC_ALGO_TYPE
 {
@@ -116,5 +119,31 @@ size_t val_algo_get_condensed_sig_header_size(uint8_t algo);
  * @return 0 on success, value for error
  */
 uint8_t val_algo_get_condensed_size(rr_type* rr, size_t* sig_length);
+
+/**
+ * Compute the 32-byte SHAKE-256 hash of the input
+ * @param buffer_out the buffer that holds the resulting SHAKE-256 hash value
+ * @param out_len the size of the resulting SHAKE256 hash value
+ * @param buffer_in the buffer that holds the input to the SHAKE-256 hash function
+ * @return 0 on success, value for error
+*/
+uint8_t val_algo_get_ladder_hash(uint8_t *buffer_out, size_t out_len, buffer_type *buffer_in);
+
+/**
+ * Check if a SigTag handle matches the full signature
+ * @param signed_ladder the signed ladder potion of the rrsig record
+ * @param signed_ladder_len the length of the signed ladder potion of the rrsig record
+ * @param edns the edns option record that contains the sigtags
+ * @return 1 if handle matches the ladder, 0 otherwise
+ */
+uint8_t val_algo_sigtag_match(uint8_t* signed_ladder, size_t signed_ladder_len, edns_record_type* edns);
+
+/**
+ * Get the Leaf index from a condensed signature
+ * @param rr rr_type resource record
+ * @param leaf_index leaf index identified in the record
+ * @return 0 on success, value for error
+ */
+uint8_t val_algo_get_leaf_index_from_condensed(rr_type* rr, uint64_t* leaf_index);
 
 #endif // __VAL_PQC_ALGO__

@@ -148,6 +148,18 @@ extern int round_robin;
 /* use minimal responses (more minimal, with additional only for referrals) */
 extern int minimal_responses;
 
+
+
+
+/*
+* Check if the same signed ladder is already included in the response. 
+* Return 0 if already included, return 1 if not. 
+*/
+int check_and_add_ladder_hash(uint8_t *list, 
+					size_t *count, 
+					size_t max_capacity, 
+					const uint8_t *new_ladder_hash);
+
 /*
  * Encode RR with OWNER as owner name into QUERY.  Returns the number
  * of RRs successfully encoded.
