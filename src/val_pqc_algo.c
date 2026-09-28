@@ -32,6 +32,7 @@
 */
 #include "val_pqc_algo.h"
 #include <string.h>
+#include <openssl/evp.h>
 
 PQC_DNSSEC_ALGOS sig_algos[] = {
     {"PQC_ALGO_FL_DSA_MTL_SHAKE",  128, ALGO_MTLLIB, ENABLED, 897, 16},
@@ -47,7 +48,7 @@ PQC_DNSSEC_ALGOS sig_algos[] = {
     {"PQC_ALGO_HAWK",              234, ALGO_OTHER,  DISABLED, 0, 0}, 
     {"PQC_ALGO_SQISIGN",           233, ALGO_OTHER,  DISABLED, 0, 0},
     {"PQC_ALGO_FL_DSA",            244, ALGO_LIBOQS, ENABLED, 897, 0},
-    {"PQC_ALGO_ML_DSA",            245, ALGO_LIBOQS, ENABLED, 1312, 0},
+    {"PQC_ALGO_ML_DSA",            18, ALGO_LIBOQS, ENABLED, 1312, 0},
     {"PQC_ALGO_SLH_DSA_SHA2",      246, ALGO_LIBOQS, ENABLED, 128, 0},
     {"PQC_ALGO_SLH_DSA_SHAKE",     247, ALGO_LIBOQS, ENABLED, 128, 0},
     {NULL, 0, ALGO_NONE, DISABLED}};
@@ -219,6 +220,117 @@ uint8_t val_algo_get_condensed_size(rr_type* rr, size_t* sig_length)
         }
 
         *sig_length = condensed_sig_size;
+    #endif
+
+    return MTL_OK;
+}
+
+/**
+ * Compute the 32-byte SHAKE-128 hash of the input
+ * @param buffer_out the buffer that holds the resulting SHAKE-128 hash value
+ * @param out_len the size of the resulting SHAKE-128 hash value
+ * @param buffer_in the buffer that holds the input to the SHAKE-128 hash function
+ * @return 0 on success, value for error
+*/
+uint8_t val_algo_get_ladder_hash(uint8_t *buffer_out, size_t out_len, buffer_type *buffer_in) {
+    EVP_MD_CTX *mdctx = NULL;
+    uint8_t success = 1;
+
+    mdctx = EVP_MD_CTX_new();
+    if (mdctx == NULL) {
+        return 1; // Context allocation failure
+    }
+    if (1 != EVP_DigestInit_ex(mdctx, EVP_shake128(), NULL)) {
+        goto cleanup;
+    }
+    if (1 != EVP_DigestUpdate(mdctx, buffer_in->_data, buffer_in->_limit)) {
+        goto cleanup;
+    }
+    if (1 != EVP_DigestFinalXOF(mdctx, buffer_out, out_len)) {
+        goto cleanup;
+    }
+
+    // On success
+    success = 0;
+
+cleanup:
+    if (mdctx) {
+        EVP_MD_CTX_free(mdctx);
+    }
+    return success;
+}
+
+
+/**
+ * Check if a SigTag handle matches the full signature
+ * @param signed_ladder the signed ladder potion of the rrsig record
+ * @param signed_ladder_len the length of the signed ladder potion of the rrsig record
+ * @param edns the edns option record that contains the sigtags
+ * @return 1 if handle matches the ladder, 0 otherwise
+ */
+uint8_t val_algo_sigtag_match(uint8_t* signed_ladder, size_t signed_ladder_len, edns_record_type* edns) {
+    uint8_t match_found = 0;
+
+    if((signed_ladder == NULL) || (edns == NULL) || (signed_ladder_len == 0)) {
+        // Inavlid configuration so no match
+        return 0;
+    }
+
+    #ifdef MTL_MODE_FULL_CODE
+    if(signed_ladder_len >= 36) {
+        buffer_type ladder_buffer;
+        buffer_create_from(&ladder_buffer, signed_ladder, signed_ladder_len);
+
+        uint8_t ladder_shake_hash[LADDER_HASH_OUTPUT_SIZE];
+
+        if (val_algo_get_ladder_hash(ladder_shake_hash, LADDER_HASH_OUTPUT_SIZE, &ladder_buffer) == 0) {
+            for(int i=0; i<MAX_SIG_TAGS; i++) {
+                if((edns->sigtag_list[i].ladder_hash_len != 0) && 
+                    (memcmp(ladder_shake_hash, edns->sigtag_list[i].ladder_hash, 32) == 0)) {
+
+                        // When is the handle ok and the client doesn't need a new signature?
+                        //     When the hash matches
+                        match_found = 1;
+                }
+            }
+        } 
+    }
+    #endif
+    return match_found;
+}
+
+/**
+ * Get the Leaf index from a condensed signature
+ * @param rr rr_type resource record
+ * @param leaf_index leaf index identified in the record
+ * @return 0 on success, value for error
+ */
+uint8_t val_algo_get_leaf_index_from_condensed(rr_type* rr, uint64_t* leaf_index)
+{
+    #ifdef MTL_MODE_FULL_CODE
+    size_t sig_len = 0;
+    buffer_type signature;
+    #endif
+
+    // Verify the parameters are not NULL
+    if((rr == NULL)||(leaf_index == NULL)) {
+        return MTL_NULL_PARAMETERS;
+    }
+
+    // Default the index to 0
+    *leaf_index = 0;
+
+    #ifdef MTL_MODE_FULL_CODE
+        if(val_algo_get_condensed_size(rr, &sig_len) != 0) {
+            return MTL_BUFFER_ERROR;
+        }
+
+        if(sig_len >= 58) {
+            buffer_create_from(&signature, rdata_atom_data(rr->rdatas[8]), sig_len);
+            uint8_t* ptr =  rdata_atom_data(rr->rdatas[8]);
+            buffer_skip(&signature, 51); // 1 byte for DNS flag and 50 bytes for sig-header
+            *leaf_index = buffer_read_u64(&signature);   
+        }
     #endif
 
     return MTL_OK;
