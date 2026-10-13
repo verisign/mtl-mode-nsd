@@ -25,6 +25,7 @@ CuSuite * reg_cutest_region(void);
 CuSuite * reg_cutest_udb(void);
 CuSuite * reg_cutest_namedb(void);
 CuSuite * reg_cutest_bitset(void);
+CuSuite * reg_cutest_pqc_algo(void);
 #ifdef RATELIMIT
 CuSuite * reg_cutest_rrl(void);
 #endif
@@ -80,6 +81,7 @@ int runalltests(const char *regex)
 	CuSuiteAddSuite(suite, reg_cutest_rrl());
 #endif
 	CuSuiteAddSuite(suite, reg_cutest_bitset());
+	CuSuiteAddSuite(suite, reg_cutest_pqc_algo());
 	CuSuiteAddSuite(suite, reg_cutest_popen3());
 	CuSuiteAddSuite(suite, reg_cutest_iter());
 	CuSuiteAddSuite(suite, reg_cutest_event());

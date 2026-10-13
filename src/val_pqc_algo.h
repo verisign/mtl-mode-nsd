@@ -37,7 +37,7 @@
 #include <stdint.h>
 
 #include "config.h"
-#include "namedb.h"
+#include "rdata.h"
 
 typedef enum DNSSEC_ALGO_TYPE
 {

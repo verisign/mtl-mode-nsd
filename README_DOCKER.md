@@ -1,10 +1,10 @@
 # MTL Mode NSD - Proof of Concept
-The MTL NSD docker image is dependent on the MTL Mode base image which consists of MTL Mode (version 1.2.0), OpenSSL (version 3.5.0+) and LibOQS (version 0.14.0+).
+The MTL NSD docker image is dependent on the MTL Mode base image which consists of MTL Mode (version 1.3.0), OpenSSL (version 3.5.0+) and LibOQS (version 0.16.0+).
 
-That base image can be built using the MTL repository: (https://github.com/verisign/MTL) using branch v1.2.0
+That base image can be built using the MTL repository: (https://github.com/verisign/MTL) using branch v1.3.0
 
 ## Building
-The MTL NSD container is built using docker and includes some smart logic to allow for the EDNS option 65050 which is a new EDNS option that requests MTL full signatures from the authoritative server.
+The MTL NSD container is built using docker.
 
 The container is built using the compose.yaml file for docker compose:
 
