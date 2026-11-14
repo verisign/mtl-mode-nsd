@@ -51,6 +51,20 @@ enum cookie_status
 };
 typedef enum cookie_status cookie_status_type;
 
+#ifdef MTL_MODE_FULL_CODE	
+#define MAX_SIG_TAGS 8
+
+/** EDNS Option data per name */
+typedef struct sigtag_list {
+	/** Identfiter Bytes (Max Size is OpenSSL EVP_MAX_MD_SIZE - 64 bytes) */	
+	uint8_t sid[64];
+	/** Identifier Length */	
+	uint16_t sid_length;
+	/** max index */
+	uint64_t max_ladder_index;
+} sigtag_list;
+#endif
+
 struct edns_record
 {
 	edns_status_type   status;
@@ -67,6 +81,8 @@ struct edns_record
 	uint16_t           ede_text_len;
 #ifdef MTL_MODE_FULL_CODE
 	int                mtl_mode_full;
+	sigtag_list        sigtags_list[MAX_SIG_TAGS*2];
+	uint8_t            sigtag_enabled;
 #endif
 };
 typedef struct edns_record edns_record_type;

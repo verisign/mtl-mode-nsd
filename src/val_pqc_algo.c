@@ -34,23 +34,17 @@
 #include <string.h>
 
 PQC_DNSSEC_ALGOS sig_algos[] = {
-    {"PQC_ALGO_FL_DSA_MTL_SHAKE",  128, ALGO_MTLLIB, ENABLED, 897, 16},
-    {"PQC_ALGO_ML_DSA_MTL_SHAKE",  129, ALGO_MTLLIB, ENABLED, 1312, 16},
-    {"PQC_ALGO_SLH_DSA_MTL_SHA2",  130, ALGO_MTLLIB, ENABLED, 128, 16},
-    {"PQC_ALGO_SLH_DSA_MTL_SHAKE", 131, ALGO_MTLLIB, ENABLED, 128, 16},
-    {"PQC_ALGO_MAYO1_MTL_SHAKE",   132, ALGO_MTLLIB, ENABLED, 1168, 16},
-    {"PQC_ALGO_MAYO2_MTL_SHAKE",   133, ALGO_MTLLIB, ENABLED, 4912, 16},
-    {"PQC_ALGO_SNOVA_MTL_SHAKE",   134, ALGO_MTLLIB, ENABLED, 1016, 16},
-    {"PQC_ALGO_MAYO_1",            230, ALGO_LIBOQS, ENABLED, 1168, 0},
-    {"PQC_ALGO_MAYO_2",            231, ALGO_LIBOQS, ENABLED, 4912, 0},
-    {"PQC_ALGO_SNOVA",             232, ALGO_LIBOQS, ENABLED, 1016, 0},
-    {"PQC_ALGO_HAWK",              234, ALGO_OTHER,  DISABLED, 0, 0}, 
-    {"PQC_ALGO_SQISIGN",           233, ALGO_OTHER,  DISABLED, 0, 0},
-    {"PQC_ALGO_FL_DSA",            244, ALGO_LIBOQS, ENABLED, 897, 0},
-    {"PQC_ALGO_ML_DSA",            245, ALGO_LIBOQS, ENABLED, 1312, 0},
-    {"PQC_ALGO_SLH_DSA_SHA2",      246, ALGO_LIBOQS, ENABLED, 128, 0},
-    {"PQC_ALGO_SLH_DSA_SHAKE",     247, ALGO_LIBOQS, ENABLED, 128, 0},
-    {NULL, 0, ALGO_NONE, DISABLED}};
+    {"ML-DSA-44",                         18, ALGO_LIBOQS, ENABLED, 1312, 16},
+    {"ML-DSA-65",                        100, ALGO_LIBOQS, ENABLED, 1952, 24},
+    {"ML-DSA-87",                        101, ALGO_LIBOQS, ENABLED, 2592, 32},
+    {"SLH_DSA_PURE_SHA2_128S",           102, ALGO_LIBOQS, ENABLED,  128, 16},
+    {"SLH_DSA_PURE_SHAKE_128S",          103, ALGO_LIBOQS, ENABLED,  128, 16},
+    {"ML-DSA-44-MTL-SHAKE-128",          118, ALGO_MTLLIB, ENABLED, 1312, 16},
+    {"ML-DSA-65-MTL-SHAKE-192",          110, ALGO_MTLLIB, ENABLED, 1952, 24},
+    {"ML-DSA-87-MTL-SHAKE-256",          111, ALGO_MTLLIB, ENABLED, 2592, 32},
+    {"SLH-DSA-SHA2-128s-MTL-SHA2-128",   112, ALGO_MTLLIB, ENABLED,  128, 16},
+    {"SLH-DSA-SHAKE-128s-MTL-SHAKE-128", 113, ALGO_MTLLIB, ENABLED,  128, 16},
+    {NULL, 0, ALGO_NONE, DISABLED, 0, 0}};
 
 /**
  * Get the PQC Algorithm properties by name
@@ -219,6 +213,117 @@ uint8_t val_algo_get_condensed_size(rr_type* rr, size_t* sig_length)
         }
 
         *sig_length = condensed_sig_size;
+    #endif
+
+    return MTL_OK;
+}
+
+/**
+ * Check if a Sigtag handle matches the full signature
+ * @param signed_ladder the signed ladder potion of the rrsig record
+ * @param signed_ladder_len the length of the signed ladder potion of the rrsig record
+ * @param edns the edns option record that contains the sigtags
+ * @param leaf_index the leaf index of the condensed signature
+ * @return 1 if handle matches the ladder, 0 otherwise
+ */
+uint8_t val_algo_sigtag_match(uint8_t* signed_ladder, size_t signed_ladder_len, edns_record_type* edns, uint64_t leaf_index) {
+    uint8_t match_found = 0;
+
+    if((signed_ladder == NULL) || (edns == NULL) || (signed_ladder_len == 0)) {
+        // Inavlid configuration so no match
+        return 0;
+    }
+
+    #ifdef MTL_MODE_FULL_CODE
+    // Find the SID and max rung value for this ladder
+    if(signed_ladder_len > 36) {
+        buffer_type full_sig;
+        buffer_create_from(&full_sig, signed_ladder, signed_ladder_len);
+        
+        // Process the signed ladder header
+        buffer_skip(&full_sig, 2);
+        uint8_t* sid = buffer_current(&full_sig);
+        buffer_skip(&full_sig, 32);						
+        uint16_t rung_count = buffer_read_u16(&full_sig);
+
+        // Seek the largest rung right value
+        uint64_t max_right = 0;
+        for(int i=0; i<rung_count; i++) {
+            buffer_skip(&full_sig, 8);
+            uint64_t rung_val = buffer_read_u64(&full_sig);
+            buffer_skip(&full_sig, 16);
+            if(rung_val > max_right)
+                max_right = rung_val;
+        }
+
+        // Check if this SID and rung are within the range
+        for(int i=0; i<MAX_SIG_TAGS*2; i++) {
+            if((edns->sigtags_list[i].sid_length != 0) && 
+                (memcmp(sid, edns->sigtags_list[i].sid, 32) == 0) &&
+                (edns->sigtags_list[i].max_ladder_index <= max_right) && 
+                (edns->sigtags_list[i].max_ladder_index >= leaf_index)) {
+                    // When is the handle ok and the client doesn't need a new signature?
+                    //   1. When the SID matches and the max index matches
+                    //     or
+                    //   2. When the SID matches and
+                    //      the max index of the handle is less than the current ladder and 
+                    //      the leaf index is less than or equal to the max index of the handle
+                    //      (e.g. this condensed signature falls within the cached ladder even though it reaches beyond it to a new ladder)				
+                    match_found = 1;
+            }
+        }
+
+        // If there was no match need to not return 1, but if edns sigtag is enabled 
+        // save this ladder in the edns list so that future requests are condensed (deuplicated)
+        if ((match_found != 1) && 
+            (edns->sigtag_enabled)) {
+            for (int i=0; i<MAX_SIG_TAGS*2; i++) {
+                if (edns->sigtags_list[i].sid_length == 0) {
+                    edns->sigtags_list[i].max_ladder_index = max_right;
+                    memcpy(edns->sigtags_list[i].sid, sid, 32);
+                    edns->sigtags_list[i].sid_length = 32;
+                    break;
+                }
+            }          
+        }
+
+    }
+    #endif
+    return match_found;
+}
+
+/**
+ * Get the Leaf index from a condensed signature
+ * @param rr rr_type resource record
+ * @param leaf_index leaf index identified in the record
+ * @return 0 on success, value for error
+ */
+uint8_t val_algo_get_leaf_index_from_condensed(rr_type* rr, uint64_t* leaf_index)
+{
+    #ifdef MTL_MODE_FULL_CODE
+    size_t sig_len = 0;
+    buffer_type signature;
+    #endif
+
+    // Verify the parameters are not NULL
+    if((rr == NULL)||(leaf_index == NULL)) {
+        return MTL_NULL_PARAMETERS;
+    }
+
+    // Default the index to 0
+    *leaf_index = 0;
+
+    #ifdef MTL_MODE_FULL_CODE
+        if(val_algo_get_condensed_size(rr, &sig_len) != 0) {
+            return MTL_BUFFER_ERROR;
+        }
+
+        if(sig_len >= 58) {
+            buffer_create_from(&signature, rdata_atom_data(rr->rdatas[8]), sig_len);
+            uint8_t* ptr =  rdata_atom_data(rr->rdatas[8]);
+            buffer_skip(&signature, 51); // 1 byte for DNS flag and 50 bytes for sig-header
+            *leaf_index = buffer_read_u64(&signature);   
+        }
     #endif
 
     return MTL_OK;

@@ -200,6 +200,12 @@ query_create(region_type *region, uint16_t *compressed_dname_offsets,
 	query->tsig_prepare_it = 1;
 	query->tsig_update_it = 1;
 	query->tsig_sign_it = 1;
+
+	#ifdef MTL_MODE_FULL_CODE	
+	query->reply_full = 0;
+	#endif
+
+
 	return query;
 }
 
@@ -1801,6 +1807,16 @@ query_add_optional(query_type *q, nsd_type *nsd, uint32_t *now_p)
 				cookie_create(q, nsd, now_p);
 				buffer_write(q->packet, q->edns.cookie, 24);
 			}
+			#ifdef MTL_MODE_FULL_CODE
+			if(q->edns.sigtag_enabled) {
+				uint8_t sigtag_buffer[] = {0xFE, 0x1A, 0x00, 0x00};
+				uint16_t sigtag_code = htons(MTL_MODE_FULL_CODE);
+				memcpy(sigtag_buffer, &sigtag_code, sizeof(uint16_t));
+
+				/* sigtag edns opt header */
+				buffer_write(q->packet, sigtag_buffer, OPT_HDR);				
+			}
+			#endif
 			/* Append Extended DNS Error (RFC8914) option if needed */
 			if (q->edns.ede >= 0) { /* < 0 means no EDE */
 				/* OPTION-CODE */
