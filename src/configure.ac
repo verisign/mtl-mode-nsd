@@ -400,10 +400,10 @@ AC_DEFUN([CHECK_SSL], [
                     CPPFLAGS="$CPPFLAGS -I$ssldir/include";
                 fi
                 ssldir_include="$ssldir/include"
-                if test ! -d "$ssldir/lib" -a -d "$ssldir/lib64"; then
-                    ssldir_lib="$ssldir/lib64"
-                else
+                if test ! -d "$ssldir/lib64" -a -d "$ssldir/lib"; then
                     ssldir_lib="$ssldir/lib"
+                else
+                    ssldir_lib="$ssldir/lib64"
                 fi
                 break;
             fi

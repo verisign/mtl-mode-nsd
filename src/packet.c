@@ -105,7 +105,8 @@ packet_encode_rr(query_type *q, domain_type *owner, rr_type *rr, uint32_t ttl)
 				return 2;
 			}	
 
-			buffer_write_u8(q->packet, 1); /* Full signature */
+			size_t buffer_start = buffer_position(q->packet);
+			buffer_write_u8(q->packet, 2); /* 2 for condensed signature */
 			/* First the condensed signature */
 			buffer_write(q->packet,
 				rdata_atom_data(rr->rdatas[j])+1,
@@ -126,35 +127,23 @@ packet_encode_rr(query_type *q, domain_type *owner, rr_type *rr, uint32_t ttl)
 					RCODE_SET(q->packet, RCODE_SERVFAIL);
 					return 2;
 				}	
-				buffer_write(q->packet,
-					rdata_atom_data(rrsig->rdatas[8]) + condensed_sig_size,
-					rdata_atom_size(rrsig->rdatas[8]) - condensed_sig_size);
+				uint8_t* signed_ladder = rdata_atom_data(rrsig->rdatas[8]) + condensed_sig_size;
+				size_t signed_ladder_len = rdata_atom_size(rrsig->rdatas[8]) - condensed_sig_size;
+				uint64_t leaf_index = 0;
+				if(val_algo_get_leaf_index_from_condensed(rr, &leaf_index)) {
+					RCODE_SET(q->packet, RCODE_SERVFAIL);
+					return 2;
+				}
 
+				// If the sigtag does not match then make these signature full signatures	
+				if(!val_algo_sigtag_match(signed_ladder, signed_ladder_len, &q->edns, leaf_index)) {
+					buffer_write(q->packet, signed_ladder, signed_ladder_len);
+					buffer_write_u8_at(q->packet, buffer_start, 1);
+				}
 				break;
 			}
 			if(k == apex_rrsigs->rr_count) {
 			}		
-		} else if(rr->type == TYPE_RRSIG
-		&& j == 8 /* The signature data */
-		&& ((!q->edns.mtl_mode_full) || 
-		    (q->edns.mtl_mode_full && (q->reply_full != 0)))
-		&& (rr_rrsig_type_covered(rr) == TYPE_SOA
-		    || rr_rrsig_type_covered(rr) == TYPE_DNSKEY)	
-		&& rr_rrsig_algorithm_mtl(rr)) 	
-		{	
-
-			// A full signature is being turned into a condensed signature here
-
-			if(val_algo_get_condensed_size(rr, &condensed_sig_size) != 0) {
-				RCODE_SET(q->packet, RCODE_SERVFAIL);
-				return 2;
-			}
-			// First the condensed signature byte
-			buffer_write_u8(q->packet, 0);
-			// Then the authentication path
-			buffer_write(q->packet,
-				rdata_atom_data(rr->rdatas[j])+1,
-				condensed_sig_size - 1);  // Offset by 1 due to the condensed/full signature byte
 		} else {
 			if(rr->type == TYPE_RRSIG
 			&& j == 8 /* The signature data */
@@ -164,6 +153,30 @@ packet_encode_rr(query_type *q, domain_type *owner, rr_type *rr, uint32_t ttl)
 			&& rr_rrsig_algorithm_mtl(rr)) 
 			{	
 				// A full signature is being added to the buffer here for a SOA or DNSKEY.
+				if(val_algo_get_condensed_size(rr, &condensed_sig_size) != 0) {
+					RCODE_SET(q->packet, RCODE_SERVFAIL);
+					return 2;
+				}
+
+				uint8_t* signed_ladder = rdata_atom_data(rr->rdatas[8]) + condensed_sig_size;
+				size_t signed_ladder_len = rdata_atom_size(rr->rdatas[8]) - condensed_sig_size;
+				uint64_t leaf_index = 0;
+				if(val_algo_get_leaf_index_from_condensed(rr, &leaf_index)) {
+					RCODE_SET(q->packet, RCODE_SERVFAIL);
+					return 2;
+				}
+
+				// If the sigtag matches condense these full signatures
+				if(val_algo_sigtag_match(signed_ladder, signed_ladder_len, &q->edns, leaf_index)) {
+					// First the condensed signature byte
+					buffer_write_u8(q->packet, 2);
+					// Then the authentication path
+					buffer_write(q->packet,
+						rdata_atom_data(rr->rdatas[j])+1,
+						condensed_sig_size - 1);  // Offset by 1 due to the condensed/full signature byte					
+					break;
+				}
+				// else is fall through to normal behavior
 			} 
 #endif
 		switch (rdata_atom_wireformat_type(rr->type, j)) {
